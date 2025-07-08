@@ -1,0 +1,18 @@
+{
+	order opa_policy after request_body
+    log default {
+        level debug
+    }
+}
+
+
+http://localhost:6000 {
+    reverse_proxy https://api.githubcopilot.com {
+        header_up Host {http.reverse_proxy.upstream.hostport}
+        header_up X-Real-IP {remote_host}
+    }
+    opa_policy {
+        bundle_path ./example_policy.rego
+        decision_path authz/allow
+    }
+}
