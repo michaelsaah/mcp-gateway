@@ -23,11 +23,11 @@ func init() {
 
 // OPAInput represents the input structure sent to OPA for policy evaluation
 type OPAInput struct {
-	Method  string                 `json:"method"`
-	Path    []string               `json:"path"`
-	Headers map[string]string      `json:"headers"`
-	Body    interface{}            `json:"body"`
-	Query   map[string]string      `json:"query"`
+	Method  string            `json:"method"`
+	Path    []string          `json:"path"`
+	Headers map[string]string `json:"headers"`
+	Body    interface{}       `json:"body"`
+	Query   map[string]string `json:"query"`
 }
 
 // Policy implements an HTTP middleware that evaluates requests against OPA policies
@@ -52,30 +52,27 @@ func (p *Policy) Provision(ctx caddy.Context) error {
 	if p.BundlePath == "" {
 		return fmt.Errorf("bundle_path is required")
 	}
-	
+
 	if p.DecisionPath == "" {
 		p.DecisionPath = "authz/allow"
 	}
-	
+
 	// Read the policy file
 	policyBytes, err := os.ReadFile(p.BundlePath)
 	if err != nil {
 		return fmt.Errorf("failed to read policy file: %w", err)
 	}
-	
-	// Prepare the Rego query  
-	query, err := rego.New(
-		// rego.Query(fmt.Sprintf("%s", p.DecisionPath)),
-		// rego.Module("policy.rego", string(policyBytes)),
 
-        rego.Query("data.authz.allow"),
-        rego.Module("authz.rego", string(policyBytes)),
+	// Prepare the Rego query
+	query, err := rego.New(
+		rego.Query("data.authz.allow"),
+		rego.Module("authz.rego", string(policyBytes)),
 	).PrepareForEval(context.Background())
 
 	if err != nil {
 		return fmt.Errorf("failed to prepare rego query: %w", err)
 	}
-	
+
 	p.query = query
 	return nil
 }
@@ -104,10 +101,10 @@ func (p Policy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 			http.Error(w, "Failed to read request body", http.StatusBadRequest)
 			return fmt.Errorf("failed to read request body: %w", err)
 		}
-		
+
 		// Reset body for downstream handlers
 		r.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
-		
+
 		// Parse JSON body if present
 		if len(bodyBytes) > 0 {
 			if err := json.Unmarshal(bodyBytes, &body); err != nil {
@@ -116,7 +113,7 @@ func (p Policy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 			}
 		}
 	}
-	
+
 	// Split path into segments, removing empty segments
 	pathSegments := []string{}
 	for _, segment := range strings.Split(strings.Trim(r.URL.Path, "/"), "/") {
@@ -124,7 +121,7 @@ func (p Policy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 			pathSegments = append(pathSegments, segment)
 		}
 	}
-	
+
 	// Parse query parameters
 	query := make(map[string]string)
 	for key, values := range r.URL.Query() {
@@ -132,7 +129,7 @@ func (p Policy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 			query[key] = values[0]
 		}
 	}
-	
+
 	// Prepare headers map
 	headers := make(map[string]string)
 	for key, values := range r.Header {
@@ -140,7 +137,7 @@ func (p Policy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 			headers[strings.ToLower(key)] = values[0]
 		}
 	}
-	
+
 	// Prepare input for OPA evaluation
 	input := OPAInput{
 		Method:  r.Method,
@@ -149,14 +146,14 @@ func (p Policy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 		Body:    body,
 		Query:   query,
 	}
-	
+
 	// Evaluate policy using rego
 	results, err := p.query.Eval(r.Context(), rego.EvalInput(input))
 	if err != nil {
 		http.Error(w, "Policy evaluation failed", http.StatusInternalServerError)
 		return fmt.Errorf("Rego evaluation failed: %w", err)
 	}
-	
+
 	// Check if the decision allows the request
 	allowed := false
 	if len(results) > 0 && len(results[0].Expressions) > 0 {
@@ -169,12 +166,11 @@ func (p Policy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 			}
 		}
 	}
-	
+
 	if !allowed {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return nil
+		return caddyhttp.Error(http.StatusForbidden, fmt.Errorf("request denied"))
 	}
-	
+
 	// Request is allowed, continue to next handler
 	return next.ServeHTTP(w, r)
 }
@@ -182,7 +178,7 @@ func (p Policy) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler
 func (p *Policy) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // consume directive name
-	
+
 	for d.NextBlock(0) {
 		switch d.Val() {
 		case "bundle_path":
@@ -199,7 +195,7 @@ func (p *Policy) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			return d.Errf("unknown subdirective: %s", d.Val())
 		}
 	}
-	
+
 	return nil
 }
 
