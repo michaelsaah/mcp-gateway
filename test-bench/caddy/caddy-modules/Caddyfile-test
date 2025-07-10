@@ -1,0 +1,5 @@
+localhost:6000 {
+    reverse_proxy https://www.google.com {
+        header_up Host {http.reverse_proxy.upstream.hostport}
+    }
+}

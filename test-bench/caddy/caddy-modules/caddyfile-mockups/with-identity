@@ -1,0 +1,42 @@
+{
+	order opa_policy after request_body
+    log default {
+        level debug
+    }
+}
+
+(policy) {
+    opa_policy {
+        bundle_path ./example_policy.rego
+        decision_path authz/allow
+    }
+}
+
+http://localhost:6000 {
+    reverse_proxy https://api.githubcopilot.com {
+        header_up Host {http.reverse_proxy.upstream.hostport}
+        header_up X-Real-IP {remote_host}
+    }
+    identity {
+        type mtls_spiffe_id
+    }
+    identity {
+        type mtls_common_name
+    }
+    identity {
+        type http_basic
+    }
+    identity {
+        type jwt
+        jwks https://github.com/login/oauth/.well-known/jwks
+    }
+    identity {
+        type header
+        name x-mcp-client-id
+    }
+    identity {
+        type opaque
+    }
+    
+    import policy
+}
